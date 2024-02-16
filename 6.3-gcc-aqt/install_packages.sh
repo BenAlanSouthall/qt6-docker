@@ -18,8 +18,19 @@ echo
 echo '--> Locating packages to provide the required shared libs'
 echo
 
+
+
 # Remove the version of libc that has broken the package manager ans revert so we can run apt again.
 apt  --yes --fix-broken install --allow-downgrades  'libc6=2.27-3ubuntu1.6'
+
+
+# Reconfigure locale
+apt update
+apt install --yes locales
+locale-gen en_US.UTF-8 && dpkg-reconfigure locales
+
+
+
 
 apt install -y apt-file software-properties-common
 apt-file update
