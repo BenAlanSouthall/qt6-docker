@@ -19,7 +19,32 @@ echo
 echo '--> Install the required packages to install linuxdeploy'
 echo
 
-apt install -y git libboost-filesystem-dev libboost-regex-dev cimg-dev wget patchelf nlohmann-json3-dev build-essential
+
+# Remove the version of libc that has broken the package manager ans revert so we can run apt again.
+apt  --yes --fix-broken install --allow-downgrades  'libc6=2.27-3ubuntu1.6'
+
+
+apt install -y apt-file software-properties-common
+
+#Not working on Cosmic
+#   # Get a more recent g++ for bionic.
+#   add-apt-repository ppa:ubuntu-toolchain-r/test
+
+# Boost is too ol - we get an error about trying to call a non-constexpr function.
+add-apt-repository ppa:savoury1/boost-defaults-1.71
+
+apt-get update
+
+
+#Not working on Cosmic
+#   apt install --yes g++-13 libstdc++-10-dev
+#   update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 110
+#   update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 110
+
+
+# NOt availanble in  bionic; trying anyway
+apt install -y git libboost-filesystem1.71-dev libboost-regex1.71-dev cimg-dev wget patchelf nlohmann-json-dev build-essential
+# apt install -y nlohmann-json3-dev
 
 echo
 echo '--> Download & install the linuxdeploy'
@@ -31,6 +56,9 @@ git -C /tmp/linuxdeploy submodule update --init --recursive
 git clone "$LINUXDEPLOY_QT_GIT" /tmp/linuxdeploy-plugin-qt
 git -C /tmp/linuxdeploy-plugin-qt checkout "$LINUXDEPLOY_QT_COMMIT"
 git -C /tmp/linuxdeploy-plugin-qt submodule update --init --recursive
+
+# Reinstal the libc that is required.
+dpkg -i  /libc6_2.28-0ubuntu1_amd64.deb 
 
 cmake /tmp/linuxdeploy -B /tmp/linuxdeploy-build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release -DUSE_CCACHE=OFF
 cmake --build /tmp/linuxdeploy-build
@@ -46,8 +74,11 @@ echo
 echo '--> Restore the packages list to the original state'
 echo
 
-dpkg --get-selections | cut -f 1 > /tmp/packages_curr.lst
-grep -Fxv -f /tmp/packages_orig.lst /tmp/packages_curr.lst | xargs apt remove -y --purge
+
+# This broke, not sure why. As it is just uninstalling, we will simply ignore it.
+#dpkg --get-selections | cut -f 1 > /tmp/packages_curr.lst
+#grep -Fxv -f /tmp/packages_orig.lst /tmp/packages_curr.lst | xargs apt remove -y --purge
+
 
 # Complete the cleaning
 
