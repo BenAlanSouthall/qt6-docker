@@ -1,15 +1,32 @@
 # Image: stateoftheartio/qt6:6.3-gcc-aqt
 
-FROM ubuntu:20.04
+
+# RHEL 8.7 uses GLIBc 2.28
+# Bionic uses libc 2.27 - but, the Qt binaries that download need 2.28
+# The Python downloads to /opt and it is not checking that it runs.
+# We will add a line to ensure this.
+
+
+FROM ubuntu:bionic AS interactive
 MAINTAINER State Of The Art <docker@state-of-the-art.io> (@stateoftheartio)
 
 # PIP requirement like "aqtinstall==2.0.6" or url with egg file
-ARG AQT_VERSION="aqtinstall==2.0.6"
+ENV AQT_VERSION="aqtinstall==2.0.6"
 
-ARG QT_VERSION=6.3.0
-ARG QT_PATH=/opt/Qt
 
-ARG ADDITIONAL_PACKAGES="sudo git openssh-client ca-certificates build-essential curl python3 locales patchelf"
+
+
+# For manually forcing the libc package
+ENV QT_VERSION=6.3.0
+
+# For trying Qt 5 - this orks with libc, but, the provblemn we have is qt-cmake is a Qt 6 feature.
+#ENV QT_VERSION=5.13.2
+
+
+
+ENV QT_PATH=/opt/Qt
+
+ARG ADDITIONAL_PACKAGES="sudo git wget gdebi-core openssh-client ca-certificates build-essential curl python3 locales patchelf python3-setuptools"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     DEBCONF_NONINTERACTIVE_SEEN=true \
@@ -17,18 +34,47 @@ ENV DEBIAN_FRONTEND=noninteractive \
     QT_GCC=${QT_PATH}/${QT_VERSION}/gcc_64 \
     PATH=${QT_PATH}/Tools/CMake/bin:${QT_PATH}/Tools/Ninja:${QT_PATH}/${QT_VERSION}/gcc_64/bin:$PATH
 
-COPY get_qt.sh get_linuxdeploy.sh install_packages.sh /tmp/
+# Do in stages to help with managing layers
+#COPY get_qt.sh get_linuxdeploy.sh install_packages.sh /tmp/
+COPY get_qt.sh /tmp/
+
+FROM interactive AS finished
 
 # Get Qt binaries with aqt
 RUN /tmp/get_qt.sh
 
+
+# Do this after installing Qt, because we are about to break apt.
+RUN apt update ; apt install --yes wget
+
+
+# WARN - we uninstall and re-install this at various points throughout the shell scripts, keep an eye on this!!!!!!!
+
+# Forcibly install gcc 2.28. This could break the OS, but we don;t care at thisstage, if it lets us build.
+RUN wget --quiet 'http://old-releases.ubuntu.com/ubuntu/pool/main/g/glibc/libc6_2.28-0ubuntu1_amd64.deb' 
+RUN dpkg -i  libc6_2.28-0ubuntu1_amd64.deb 
+
+
+# Fail if a Qt tool does not start (because of linker-loader problems)
+# This not available on older versions
+#RUN ${QT_PATH}/${QT_VERSION}/gcc_64/./libexec/moc --help
+RUN  ${QT_PATH}/${QT_VERSION}/gcc_64/bin/qt-cmake --help
+
+
+COPY get_linuxdeploy.sh /tmp/
+
 # Get linuxdeploy and build it
 RUN /tmp/get_linuxdeploy.sh
+
+
+COPY install_packages.sh /tmp/
 
 # Install the required packages
 RUN /tmp/install_packages.sh
 
 # Reconfigure locale
+RUN apt update
+RUN apt install --yes locales
 RUN locale-gen en_US.UTF-8 && dpkg-reconfigure locales
 
 # Add group & user + sudo
@@ -37,3 +83,4 @@ RUN groupadd -r user && useradd --create-home --gid user user && echo 'user ALL=
 USER user
 WORKDIR /home/user
 ENV HOME /home/user
+
