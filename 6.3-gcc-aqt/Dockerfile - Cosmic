@@ -1,0 +1,64 @@
+# noninteractive
+# ABANDONED TRYING TO BUILD WITH COSMIC
+# Whilst it is the only Ubuntu distribution on glibc 2.28, too many other packages are now no longer available.
+# Instead we need to resort to installing an old version manually and then removing this for any apt operations.
+# This is horrible, but, it works.
+
+
+# Image: stateoftheartio/qt6:6.3-gcc-aqt
+
+# RHEL 8.7 uses GLIBc 2.28
+# Bionic uses libc 2.27 - but, the Qt binaries that download need 2.28
+# The Python downloads to /opt and it is not checking that it runs.
+# We will add a line to ensure this.
+# Cosmic Cuttlefish is the only one on exactly 2.28
+
+FROM ubuntu:cosmic AS interactive
+MAINTAINER State Of The Art <docker@state-of-the-art.io> (@stateoftheartio)
+
+# PIP requirement like "aqtinstall==2.0.6" or url with egg file
+
+# Making these ENV so that we can dbeug more easily.
+ENV AQT_VERSION="aqtinstall==2.0.6"
+
+ENV QT_VERSION=6.3.0
+ENV QT_PATH=/opt/Qt
+
+ARG ADDITIONAL_PACKAGES="sudo git openssh-client ca-certificates build-essential curl python3 locales patchelf python3-setuptools"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    DEBCONF_NONINTERACTIVE_SEEN=true \
+    QT_PATH=${QT_PATH} \
+    QT_GCC=${QT_PATH}/${QT_VERSION}/gcc_64 \
+    PATH=${QT_PATH}/Tools/CMake/bin:${QT_PATH}/Tools/Ninja:${QT_PATH}/${QT_VERSION}/gcc_64/bin:$PATH
+
+COPY get_qt.sh get_linuxdeploy.sh install_packages.sh /tmp/
+
+FROM interactive AS finished
+
+
+# Point to old-releases
+RUN sed -i -re 's/([a-z]{2}\.)?archive.ubuntu.com|security.ubuntu.com/old-releases.ubuntu.com/g' /etc/apt/sources.list
+
+# Get Qt binaries with aqt
+RUN /tmp/get_qt.sh
+
+# Fail if a Qt tool does not start (because of linker-loader problems)
+RUN ${QT_PATH}/${QT_VERSION}/gcc_64/./libexec/moc --help
+
+
+# Get linuxdeploy and build it
+RUN /tmp/get_linuxdeploy.sh
+
+# Install the required packages
+RUN /tmp/install_packages.sh
+
+# Reconfigure locale
+RUN locale-gen en_US.UTF-8 && dpkg-reconfigure locales
+
+# Add group & user + sudo
+RUN groupadd -r user && useradd --create-home --gid user user && echo 'user ALL=NOPASSWD: ALL' > /etc/sudoers.d/user
+
+USER user
+WORKDIR /home/user
+ENV HOME /home/user
